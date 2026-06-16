@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>期权计算器 v1.11</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <style>
+        * {
+            -webkit-tap-highlight-color: transparent;
+        }
+        input[type="number"] {
+            -moz-appearance: textfield;
+        }
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        .input-field {
+            transition: all 0.2s ease;
+        }
+        .input-field:focus {
+            transform: scale(1.02);
+        }
+        .date-field {
+            transition: all 0.2s ease;
+        }
+        .date-field:focus {
+            transform: scale(1.02);
+        }
+        .error-shake {
+            animation: shake 0.5s ease-in-out;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .moneyness-badge {
+            transition: all 0.3s ease;
+        }
+        .delta-orange {
+            color: #F59E0B;
+        }
+        .shares-gray {
+            color: #6B7280;
+        }
+        .theoretical-blue {
+            color: #1E40AF;
+        }
+        /* v1.9: Tooltip样式 */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            cursor: help;
+        }
+        .tooltip .tooltip-text {
+            visibility: hidden;
+            opacity: 0;
+            position: absolute;
+            background-color: #374151;
+            color: #F3F4F6;
+            text-align: center;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 400;
+            white-space: nowrap;
+            z-index: 100;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+        .tooltip .tooltip-text::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #374151 transparent transparent transparent;
+        }
+        .tooltip:hover .tooltip-text,
+        .tooltip.active .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+        /* v1.9: 升幅/正股股价列样式 */
+        .change-price-cell {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+        }
+        .change-percent {
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .stock-price {
+            font-size: 12px;
+            font-weight: 400;
+            color: #374151;
+        }
+        /* v1.10: 理论价值样式 - 字体大小与升幅列一致 */
+        .theoretical-value {
+            font-size: 14px;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-4xl mx-auto px-4 py-6 pb-20">
+        <!-- 标题 -->
+        <header class="text-center mb-6">
+            <h1 class="text-2xl font-bold text-gray-800">期权计算器</h1>
+            <p class="text-sm text-gray-500 mt-1">快速对比正股与期权投资收益</p>
+            <span class="inline-block mt-2 text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-medium">v1.12</span>
+        </header>
+
+        <!-- 第1部分：正股投资 -->
+        <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4 fade-in">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                <span class="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-sm mr-2">1</span>
+                正股投资
+            </h2>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">正股现价 ($)</label>
+                    <input type="number" id="stockPrice" step="0.01" min="0" placeholder="0.00"
+                        class="input-field w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-800">
+                    <p class="text-xs text-red-500 mt-1 hidden" id="stockPriceError">请输入有效价格</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">股数</label>
+                    <input type="number" id="stockQuantity" step="1" min="1" placeholder="0"
+                        class="input-field w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-800">
+                    <p class="text-xs text-red-500 mt-1 hidden" id="stockQuantityError">请输入有效股数</p>
+                </div>
+            </div>
+            <div class="mt-4 pt-4 border-t border-gray-100">
+                <div class="flex justify-between items-center">
+                    <span class="text-sm font-medium text-gray-600">总金额</span>
+                    <span id="stockTotalAmount" class="text-xl font-bold text-blue-600">$0.00</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第2部分：期权投资 -->
+        <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4 fade-in">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                <span class="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-sm mr-2">2</span>
+                期权投资
+            </h2>
+            <!-- 日期字段 -->
+            <div class="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">目前日期</label>
+                    <input type="text" id="currentDate" readonly
+                        class="date-field w-full px-3 py-2 border border-dashed border-gray-400 bg-gray-50 rounded-lg text-gray-500" style="width: 140px;">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1 flex items-center">
+                        到期日期 <span class="text-red-500">*</span>
+                        <!-- v1.12: 添加格式说明icon -->
+                        <span class="tooltip ml-1">
+                            <svg class="w-4 h-4 text-gray-400 hover:text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                            </svg>
+                            <span class="tooltip-text">到期日期使用 yyyy-mm-dd 格式</span>
+                        </span>
+                    </label>
+                    <input type="date" id="expiryDate"
+                        class="date-field w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-800" style="width: 140px;">
+                    <p class="text-xs text-red-500 mt-1 hidden" id="expiryDateError">到期日期必须晚于目前日期</p>
+                </div>
+            </div>
+            <!-- 合约数量、期权金、股数、行使价 -->
+            <div class="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">合约数量</label>
+                    <input type="number" id="optionContracts" step="1" min="1" placeholder="0"
+                        class="input-field w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-800">
+                    <p class="text-xs text-red-500 mt-1 hidden" id="optionContractsError">请输入有效数量</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">期权金 ($/股)</label>
+                    <input type="number" id="optionPremium" step="0.01" min="0" placeholder="0.00"
+                        class="input-field w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-800">
+                    <p class="text-xs text-red-500 mt-1 hidden" id="optionPremiumError">请输入有效期权金</p>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">股数/份</label>
+                    <input type="number" id="optionSharesPerContract" step="1" min="1" placeholder="0"
+                        class="input-field w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-800">
+                    <p class="text-xs text-red-500 mt-1 hidden" id="optionSharesPerContractError">请输入有效股数</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1 flex items-center">
+                        行使价 ($)
+                        <span id="moneynessBadge" class="ml-2 moneyness-badge hidden text-xs px-2 py-0.5 rounded font-bold">价内</span>
+                    </label>
+                    <input type="number" id="optionStrikePrice" step="0.01" min="0" placeholder="0.00"
+                        class="input-field w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-800">
+                    <p class="text-xs text-red-500 mt-1 hidden" id="optionStrikePriceError">请输入有效行使价</p>
+                </div>
+            </div>
+            <!-- 引身波幅、无风险利率、股息收益率、对冲值 -->
+            <div class="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">引身波幅 (%)</label>
+                    <input type="number" id="optionImpliedVolatility" step="0.1" min="0" placeholder="0.0"
+                        class="input-field w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-800">
+                    <p class="text-xs text-red-500 mt-1 hidden" id="optionImpliedVolatilityError">请输入有效波幅</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">无风险利率 (%)</label>
+                    <input type="number" id="riskFreeRate" step="0.1" min="0" max="20" value="5.0" placeholder="5.0"
+                        class="input-field w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-800">
+                    <p class="text-xs text-red-500 mt-1 hidden" id="riskFreeRateError">请输入0-20之间的数值</p>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">股息收益率 (%)</label>
+                    <input type="number" id="dividendYield" step="0.1" min="0" max="20" value="0.0" placeholder="0.0"
+                        class="input-field w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-800">
+                    <p class="text-xs text-red-500 mt-1 hidden" id="dividendYieldError">请输入0-20之间的数值</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">对冲值（初始）</label>
+                    <input type="number" id="optionDelta" step="0.01" min="0.01" max="1" placeholder="0.00"
+                        class="input-field w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-800">
+                    <p class="text-xs text-red-500 mt-1 hidden" id="optionDeltaError">请输入0-1之间的数值</p>
+                </div>
+            </div>
+            <div class="mt-4 pt-4 border-t border-gray-100 space-y-2">
+                <div class="flex justify-between items-center">
+                    <!-- v1.10: "真实股数"改为"相对股数" -->
+                    <span class="text-sm font-medium text-gray-600 flex items-center">
+                        相对股数
+                        <!-- v1.9: 添加tooltip icon -->
+                        <span class="tooltip ml-1">
+                            <svg class="w-4 h-4 text-gray-400 hover:text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                            </svg>
+                            <span class="tooltip-text">相对股数 = 合约数量 × 股数 × 对冲值</span>
+                        </span>
+                    </span>
+                    <span id="optionRealShares" class="text-base font-semibold text-gray-800">0 股</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-sm font-medium text-gray-600">总金额</span>
+                    <span id="optionTotalAmount" class="text-xl font-bold text-blue-600">$0.00</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第3部分：盈利对比表 -->
+        <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 fade-in">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                <span class="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-sm mr-2">3</span>
+                盈利对比
+            </h2>
+            <div id="comparisonTable" class="overflow-x-auto">
+                <div class="text-center text-gray-400 py-8">
+                    <svg class="w-12 h-12 mx-auto mb-2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    <p class="text-sm">请输入参数查看盈利对比</p>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            // 升幅数组：从-5%到-1%，然后+1%到+30%
+            const changeRanges = [];
+            for (let i = -5; i <= -1; i++) {
+                changeRanges.push(i);
+            }
+            for (let i = 1; i <= 30; i++) {
+                changeRanges.push(i);
+            }
+
+            // 格式化货币
+            function formatCurrency(amount) {
+                return '$' + amount.toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+            }
+
+            // v1.11: 格式化日期为yyyy-mm-dd格式（严格标准）
+            function formatDate(date) {
+                const d = new Date(date);
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+
+            // v1.11: 验证日期格式是否为yyyy-mm-dd
+            function isValidDateFormat(dateStr) {
+                const regex = /^\d{4}-\d{2}-\d{2}$/;
+                return regex.test(dateStr);
+            }
+
+            // 标准正态分布累积分布函数（CDF）
+            // 使用 Abramowitz & Stegun 近似公式
+            function normalCDF(x) {
+                const p = 0.2316419;
+                const a1 = 0.319381530;
+                const a2 = -0.356563782;
+                const a3 = 1.781477937;
+                const a4 = -1.821255978;
+                const a5 = 1.330274429;
+
+                const absX = Math.abs(x);
+                const t = 1 / (1 + p * absX);
+                const phi = (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-x * x / 2);
+
+                let cdf = 1 - phi * (a1 * t + a2 * t * t + a3 * t * t * t +
+                                     a4 * t * t * t * t + a5 * t * t * t * t * t);
+
+                if (x < 0) {
+                    cdf = 1 - cdf;
+                }
+
+                return cdf;
+            }
+
+            // 计算到期时间（年）
+            function calculateTimeToMaturity(currentDateStr, expiryDateStr) {
+                const current = new Date(currentDateStr);
+                const expiry = new Date(expiryDateStr);
+                const diffTime = expiry - current;
+                const diffDays = diffTime / (1000 * 60 * 60 * 24);
+                const timeToMaturity = diffDays / 365;
+                return timeToMaturity;
+            }
+
+            // 计算动态Delta（完整 Black-Scholes）
+            function calculateDynamicDelta(stockPrice, strikePrice, impliedVolatility, riskFreeRate, dividendYield, timeToMaturity) {
+                const sigma = impliedVolatility / 100;  // 引身波幅（小数形式）
+                const r = riskFreeRate / 100;          // 无风险利率（小数形式）
+                const q = dividendYield / 100;         // 股息收益率（小数形式）
+                const t = timeToMaturity;              // 到期时间（年）
+
+                const d1 = (Math.log(stockPrice / strikePrice) + (r - q + sigma * sigma / 2) * t) / (sigma * Math.sqrt(t));
+                const delta = Math.exp(-q * t) * normalCDF(d1);
+
+                return delta;
+            }
+
+            // 计算理论价值
+            function calculateTheoreticalValue(stockPrice, strikePrice, impliedVolatility, riskFreeRate, dividendYield, timeToMaturity) {
+                const sigma = impliedVolatility / 100;
+                const r = riskFreeRate / 100;
+                const q = dividendYield / 100;
+                const t = timeToMaturity;
+
+                const d1 = (Math.log(stockPrice / strikePrice) + (r - q + sigma * sigma / 2) * t) / (sigma * Math.sqrt(t));
+                const d2 = d1 - sigma * Math.sqrt(t);
+
+                const nd1 = normalCDF(d1);
+                const nd2 = normalCDF(d2);
+
+                const theoreticalValue = stockPrice * Math.exp(-q * t) * nd1 - strikePrice * Math.exp(-r * t) * nd2;
+
+                return theoreticalValue;
+            }
+
+            // 计算理论价值/对冲值/相对股数显示格式（v1.10: 理论价值字体大小调整为14px）
+            function calculateTheoreticalValueDeltaAndRealSharesDisplay(
+                stockPrice,
+                strikePrice,
+                impliedVolatility,
+                riskFreeRate,
+                dividendYield,
+                timeToMaturity,
+                contractCount,      // v1.8新增：合约数量
+                optionSharesPerContract  // v1.8修改：每份合约的股数
+            ) {
+                // 计算理论价值
+                const theoreticalValue = calculateTheoreticalValue(
+                    stockPrice,
+                    strikePrice,
+                    impliedVolatility,
+                    riskFreeRate,
+                    dividendYield,
+                    timeToMaturity
+                );
+
+                // 计算动态 Delta
+                const delta = calculateDynamicDelta(
+                    stockPrice,
+                    strikePrice,
+                    impliedVolatility,
+                    riskFreeRate,
+                    dividendYield,
+                    timeToMaturity
+                );
+
+                // 计算相对股数（v1.8修正：包含合约数量）
+                const totalOptionShares = contractCount * optionSharesPerContract;  // 总期权股数
+                const realShares = totalOptionShares * delta;
+
+                // v1.10: 格式化输出，理论价值使用14px字体大小
+                return {
+                    theoreticalValue: theoreticalValue.toFixed(2),
+                    delta: delta.toFixed(4),
+                    realShares: realShares.toFixed(2),
+                    displayHtml: `<span class="theoretical-blue theoretical-value">${theoreticalValue.toFixed(2)}</span><br><span class="delta-orange" style="font-size: 11px;">${delta.toFixed(4)}</span><br><span class="shares-gray" style="font-size: 11px;">${realShares.toFixed(2)}</span>`
+                };
+            }
+
+            // 更新价内/价外状态
+            function updateMoneynessStatus() {
+                const stockPrice = parseFloat($('#stockPrice').val());
+                const strikePrice = parseFloat($('#optionStrikePrice').val());
+
+                const $badge = $('#moneynessBadge');
+
+                if (!isNaN(stockPrice) && !isNaN(strikePrice) && stockPrice > 0 && strikePrice > 0) {
+                    $badge.removeClass('hidden');
+                    if (stockPrice > strikePrice) {
+                        $badge.removeClass('text-red-500 bg-red-100 text-gray-500 bg-gray-100')
+                              .addClass('text-green-600 bg-green-100')
+                              .text('价内');
+                    } else if (stockPrice < strikePrice) {
+                        $badge.removeClass('text-green-600 bg-green-100 text-gray-500 bg-gray-100')
+                              .addClass('text-red-500 bg-red-100')
+                              .text('价外');
+                    } else {
+                        $badge.removeClass('text-green-600 bg-green-100 text-red-500 bg-red-100')
+                              .addClass('text-gray-500 bg-gray-100')
+                              .text('平价');
+                    }
+                } else {
+                    $badge.addClass('hidden');
+                }
+            }
+
+            // 验证输入
+            function validateInput(value, min, max = null) {
+                if (value === '' || value === null || value === undefined) {
+                    return { valid: false, message: '请输入数值' };
+                }
+                const num = parseFloat(value);
+                if (isNaN(num)) {
+                    return { valid: false, message: '请输入有效数值' };
+                }
+                if (num < min) {
+                    return { valid: false, message: `数值必须大于等于${min}` };
+                }
+                if (max !== null && num > max) {
+                    return { valid: false, message: `数值必须小于等于${max}` };
+                }
+                return { valid: true };
+            }
+
+            // 验证日期
+            function validateDate(currentDateStr, expiryDateStr) {
+                if (!currentDateStr || !expiryDateStr) {
+                    return { valid: false, message: '请选择日期' };
+                }
+
+                // v1.11: 验证日期格式
+                if (!isValidDateFormat(currentDateStr) || !isValidDateFormat(expiryDateStr)) {
+                    return { valid: false, message: '日期格式必须是 yyyy-mm-dd' };
+                }
+
+                const current = new Date(currentDateStr);
+                const expiry = new Date(expiryDateStr);
+
+                // 检查日期是否有效
+                if (isNaN(current.getTime()) || isNaN(expiry.getTime())) {
+                    return { valid: false, message: '无效日期' };
+                }
+
+                if (expiry <= current) {
+                    return { valid: false, message: '到期日期必须晚于目前日期' };
+                }
+
+                return { valid: true };
+            }
+
+            // 显示/隐藏错误
+            function showError(elementId, show) {
+                const $error = $('#' + elementId + 'Error');
+                if (show) {
+                    $error.removeClass('hidden');
+                    $('#' + elementId).addClass('border-red-500 error-shake');
+                    setTimeout(() => $('#' + elementId).removeClass('error-shake'), 500);
+                } else {
+                    $error.addClass('hidden');
+                    $('#' + elementId).removeClass('border-red-500');
+                }
+            }
+
+            // v1.9: 移动端tooltip点击事件处理
+            if ('ontouchstart' in window) {
+                $(document).on('touchstart', '.tooltip', function(e) {
+                    e.preventDefault();
+                    $(this).toggleClass('active');
+                });
+                $(document).on('touchstart', function(e) {
+                    if (!$(e.target).closest('.tooltip').length) {
+                        $('.tooltip').removeClass('active');
+                    }
+                });
+            }
+
+            // 计算并更新（v1.9: 合并升幅和正股股价列）
+            function calculate() {
+                // 获取正股数据
+                const stockPrice = $('#stockPrice').val();
+                const stockQuantity = $('#stockQuantity').val();
+
+                // 获取期权数据
+                const optionContracts = $('#optionContracts').val();
+                const optionPremium = $('#optionPremium').val();
+                const optionSharesPerContract = $('#optionSharesPerContract').val();
+                const optionStrikePrice = $('#optionStrikePrice').val();
+                const optionImpliedVolatility = $('#optionImpliedVolatility').val();
+                const optionDelta = $('#optionDelta').val();
+                const riskFreeRate = $('#riskFreeRate').val();
+                const dividendYield = $('#dividendYield').val();
+                const expiryDate = $('#expiryDate').val();
+
+                // 验证正股输入
+                const stockPriceValid = validateInput(stockPrice, 0);
+                showError('stockPrice', !stockPriceValid.valid && stockPrice !== '');
+
+                const stockQuantityValid = validateInput(stockQuantity, 1);
+                showError('stockQuantity', !stockQuantityValid.valid && stockQuantity !== '');
+
+                // 验证期权输入
+                const optionContractsValid = validateInput(optionContracts, 1);
+                showError('optionContracts', !optionContractsValid.valid && optionContracts !== '');
+
+                const optionPremiumValid = validateInput(optionPremium, 0);
+                showError('optionPremium', !optionPremiumValid.valid && optionPremium !== '');
+
+                const optionSharesPerContractValid = validateInput(optionSharesPerContract, 1);
+                showError('optionSharesPerContract', !optionSharesPerContractValid.valid && optionSharesPerContract !== '');
+
+                const optionStrikePriceValid = validateInput(optionStrikePrice, 0);
+                showError('optionStrikePrice', !optionStrikePriceValid.valid && optionStrikePrice !== '');
+
+                const optionImpliedVolatilityValid = validateInput(optionImpliedVolatility, 0);
+                showError('optionImpliedVolatility', !optionImpliedVolatilityValid.valid && optionImpliedVolatility !== '');
+
+                const riskFreeRateValid = validateInput(riskFreeRate, 0, 20);
+                showError('riskFreeRate', !riskFreeRateValid.valid && riskFreeRate !== '');
+
+                const dividendYieldValid = validateInput(dividendYield, 0, 20);
+                showError('dividendYield', !dividendYieldValid.valid && dividendYield !== '');
+
+                const optionDeltaValid = validateInput(optionDelta, 0.01, 1);
+                showError('optionDelta', !optionDeltaValid.valid && optionDelta !== '');
+
+                // 验证到期日期
+                const currentDateVal = $('#currentDate').val();
+                const expiryDateValid = validateDate(currentDateVal, expiryDate);
+                showError('expiryDate', !expiryDateValid.valid && expiryDate !== '');
+
+                // 更新价内/价外状态
+                updateMoneynessStatus();
+
+                // 计算正股总金额
+                if (stockPriceValid.valid && stockQuantityValid.valid) {
+                    const sp = parseFloat(stockPrice);
+                    const sq = parseInt(stockQuantity);
+                    const stockTotal = sp * sq;
+                    $('#stockTotalAmount').text(formatCurrency(stockTotal));
+                } else {
+                    $('#stockTotalAmount').text('$0.00');
+                }
+
+                // 计算期权总金额和相对股数（v1.8修正：相对股数包含合约数量）
+                if (optionContractsValid.valid && optionPremiumValid.valid &&
+                    optionSharesPerContractValid.valid && optionDeltaValid.valid) {
+                    const oc = parseInt(optionContracts);
+                    const op = parseFloat(optionPremium);
+                    const osc = parseInt(optionSharesPerContract);
+                    const od = parseFloat(optionDelta);
+
+                    const optionTotal = oc * op * osc;
+
+                    // v1.8修正：相对股数 = 合约数量 × 股数 × 初始对冲值
+                    const totalOptionShares = oc * osc;
+                    const realShares = totalOptionShares * od;
+
+                    $('#optionTotalAmount').text(formatCurrency(optionTotal));
+                    $('#optionRealShares').text(realShares.toFixed(2) + ' 股');
+                } else {
+                    $('#optionTotalAmount').text('$0.00');
+                    $('#optionRealShares').text('0 股');
+                }
+
+                // 生成对比表格（v1.9: 升幅/正股股价 → 理论价值/对冲值/相对股数 → 正股盈利 → 期权盈利）
+                if (stockPriceValid.valid && stockQuantityValid.valid &&
+                    optionContractsValid.valid && optionPremiumValid.valid &&
+                    optionSharesPerContractValid.valid && optionStrikePriceValid.valid &&
+                    optionImpliedVolatilityValid.valid && riskFreeRateValid.valid &&
+                    dividendYieldValid.valid && expiryDateValid.valid) {
+
+                    const sp = parseFloat(stockPrice);
+                    const sq = parseInt(stockQuantity);
+                    const oc = parseInt(optionContracts);
+                    const op = parseFloat(optionPremium);
+                    const osc = parseInt(optionSharesPerContract);
+                    const osp = parseFloat(optionStrikePrice);
+                    const oiv = parseFloat(optionImpliedVolatility);
+                    const rfr = parseFloat(riskFreeRate) || 5.0;
+                    const dy = parseFloat(dividendYield) || 0.0;
+
+                    // 计算到期时间
+                    const timeToMaturity = calculateTimeToMaturity(currentDateVal, expiryDate);
+
+                    // 期权总金额（用于价外时的亏损计算）
+                    const optionTotalAmount = oc * op * osc;
+
+                    let tableHtml = `
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="border-b border-gray-200">
+                                        <th class="text-center py-3 px-2 font-semibold text-gray-700 w-[100px]">升幅/正股股价</th>
+                                        <th class="text-center py-3 px-2 font-semibold text-gray-700 w-[90px]">理论价值/对冲值/相对股数</th>
+                                        <th class="text-right py-3 px-2 font-semibold text-gray-700 w-[100px]">正股盈利</th>
+                                        <th class="text-right py-3 px-2 font-semibold text-gray-700 w-[100px]">期权盈利</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                    `;
+
+                    changeRanges.forEach(change => {
+                        const changePercent = change / 100;
+                        const newPrice = sp * (1 + changePercent);
+
+                        // 正股盈利
+                        const stockProfit = (newPrice - sp) * sq;
+
+                        // 计算动态 Delta（完整 Black-Scholes）
+                        const dynamicDelta = calculateDynamicDelta(newPrice, osp, oiv, rfr, dy, timeToMaturity);
+
+                        // 期权盈利（价外时显示负的期权总金额）
+                        let optionProfit;
+                        if (newPrice < osp) {
+                            optionProfit = -optionTotalAmount;  // 损失全部本金
+                        } else {
+                            const intrinsicValue = newPrice - osp;
+                            const profitPerShare = intrinsicValue - op;
+                            optionProfit = oc * profitPerShare * osc * dynamicDelta;
+                        }
+
+                        // 理论价值/对冲值/相对股数显示（v1.8修正：传入合约数量）
+                        const theoreticalValueDeltaRealSharesDisplay = calculateTheoreticalValueDeltaAndRealSharesDisplay(
+                            newPrice,
+                            osp,
+                            oiv,
+                            rfr,
+                            dy,
+                            timeToMaturity,
+                            oc,      // v1.8新增：传入合约数量
+                            osc      // v1.8修改：传入每份合约的股数
+                        );
+
+                        // v1.9: 颜色类
+                        const changeClass = change < 0 ? 'text-red-500' : (change > 0 ? 'text-green-500' : 'text-gray-400');
+                        const stockProfitClass = stockProfit > 0 ? 'text-green-600' : (stockProfit < 0 ? 'text-red-500' : 'text-gray-400');
+                        const optionProfitClass = optionProfit > 0 ? 'text-green-600' : (optionProfit < 0 ? 'text-red-500' : 'text-gray-400');
+
+                        tableHtml += `
+                            <tr class="border-b border-gray-100 hover:bg-gray-50">
+                                <td class="py-2 px-2 text-center">
+                                    <div class="change-price-cell">
+                                        <span class="change-percent ${changeClass}">${change > 0 ? '+' : ''}${change}%</span>
+                                        <span class="stock-price">${formatCurrency(newPrice)}</span>
+                                    </div>
+                                </td>
+                                <td class="py-2 px-2 text-center leading-tight">${theoreticalValueDeltaRealSharesDisplay.displayHtml}</td>
+                                <td class="py-2 px-2 text-right ${stockProfitClass}">${formatCurrency(stockProfit)}</td>
+                                <td class="py-2 px-2 text-right ${optionProfitClass}">${formatCurrency(optionProfit)}</td>
+                            </tr>
+                        `;
+                    });
+
+                    tableHtml += `
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+
+                    $('#comparisonTable').html(tableHtml);
+                } else {
+                    $('#comparisonTable').html(`
+                        <div class="text-center text-gray-400 py-8">
+                            <svg class="w-12 h-12 mx-auto mb-2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                            <p class="text-sm">请输入完整参数查看盈利对比</p>
+                        </div>
+                    `);
+                }
+            }
+
+            // 初始化目前日期
+            function initCurrentDate() {
+                const today = new Date();
+                $('#currentDate').val(formatDate(today));
+            }
+
+            // 设置到期日期默认值（默认为6个月后）
+            function setDefaultExpiryDate() {
+                const today = new Date();
+                const expiry = new Date(today);
+                expiry.setMonth(expiry.getMonth() + 6);
+                $('#expiryDate').val(formatDate(expiry));
+            }
+
+            // 绑定输入事件
+            $('input').on('input', calculate);
+
+            // 初始化
+            initCurrentDate();
+            setDefaultExpiryDate();
+            calculate();
+        });
+    </script>
+</body>
+</html>
